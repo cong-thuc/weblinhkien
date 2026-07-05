@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\ComponentController;
 
 Route::get('/', function () {
     return redirect('/login');
@@ -39,6 +40,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
 
 Route::middleware('auth')->group(function () {
 
-    Route::resource('category', CategoryController::class);
+    Route::resource('categories', CategoryController::class);
+    Route::resource('components', ComponentController::class);
 
 });

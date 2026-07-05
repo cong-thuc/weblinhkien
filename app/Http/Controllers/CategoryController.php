@@ -7,76 +7,52 @@ use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
-    // Hiển thị danh sách
+    // 1. Hiển thị danh sách danh mục
     public function index()
     {
-        $categories = Category::all();
-        return view('category.index', compact('categories'));
+        $categories = Category::latest()->paginate(10);
+        return view('categories.index', compact('categories'));
     }
 
-    // Không dùng trang create riêng
-    public function create()
-    {
-        return redirect()->route('category.index');
-    }
-
-    // Lưu dữ liệu
+    // 2. Lưu danh mục mới vào DB
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|max:255',
-            'description' => 'nullable'
+            'name' => 'required|string|max:255|unique:categories,name',
+        ], [
+            'name.required' => 'Vui lòng nhập tên danh mục.',
+            'name.unique' => 'Tên danh mục này đã tồn tại.',
         ]);
 
-        Category::create([
-            'name' => $request->name,
-            'description' => $request->description,
-        ]);
+        Category::create($request->all());
 
-        return redirect()->route('category.index')
-            ->with('success', 'Thêm danh mục thành công!');
+        return redirect()->route('categories.index')->with('success', 'Thêm danh mục thành công!');
     }
 
-    // Không dùng
-    public function show(string $id)
-    {
-        //
-    }
-
-    // Hiển thị form sửa
-    public function edit(string $id)
-    {
-        $category = Category::findOrFail($id);
-
-        return view('category.edit', compact('category'));
-    }
-
-    // Cập nhật
-    public function update(Request $request, string $id)
+    // 3. Cập nhật thông tin danh mục
+    public function update(Request $request, Category $category)
     {
         $request->validate([
-            'name' => 'required|max:255',
-            'description' => 'nullable'
+            'name' => 'required|string|max:255|unique:categories,name,' . $category->id,
+        ], [
+            'name.required' => 'Tên danh mục không được để trống.',
+            'name.unique' => 'Tên danh mục này đã tồn tại.',
         ]);
 
-        $category = Category::findOrFail($id);
+        $category->update($request->all());
 
-        $category->update([
-            'name' => $request->name,
-            'description' => $request->description,
-        ]);
-
-        return redirect()->route('category.index')
-            ->with('success', 'Cập nhật thành công!');
+        return redirect()->route('categories.index')->with('success', 'Cập nhật danh mục thành công!');
     }
 
-    // Xóa
-    public function destroy(string $id)
+    // 4. Xóa danh mục
+    public function destroy(Category $category)
     {
-        $category = Category::findOrFail($id);
         $category->delete();
-
-        return redirect()->route('category.index')
-            ->with('success', 'Xóa thành công!');
+        return redirect()->route('categories.index')->with('success', 'Xóa danh mục thành công!');
+    }
+    // Hàm để hiển thị form chỉnh sửa
+    public function edit(Category $category)
+    {
+        return view('categories.edit', compact('category'));
     }
 }
