@@ -2,8 +2,7 @@
 
 @section('content')
 <h2>Quản lý Linh Kiện</h2>
-<div class="card shadow-sm">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+<div class="card shadow-sm mb-5"> <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
         <h5 class="mb-0 text-dark fw-bold">Danh Sách Linh Kiện</h5>
         <a href="{{ route('components.create') }}" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-circle"></i> Thêm Linh Kiện Mới
@@ -33,7 +32,6 @@
                     <tr>
                         <td>{{ $key + 1 }}</td>
                         <td>
-                            <!-- Xử lý hiển thị ảnh -->
                             @if($component->image)
                                 <img src="{{ asset('storage/' . $component->image) }}" alt="Ảnh SP" width="50" height="50" class="rounded object-fit-cover" style="border: 1px solid #ddd;">
                             @else
@@ -43,7 +41,6 @@
                         <td><span class="badge bg-secondary">{{ $component->code }}</span></td>
                         <td class="fw-bold text-primary">{{ $component->name }}</td>
                         
-                        <!-- Lấy tên danh mục qua relationship -->
                         <td>{{ $component->category->name ?? 'N/A' }}</td>
                         
                         <td>
@@ -79,4 +76,5 @@
         </div>
     </div>
 </div>
+
 @endsection

@@ -85,12 +85,14 @@
             <i class="bi bi-truck"></i> Quản lý linh kiện   
         </a>
 
-        <a href="#" class="{{ request()->is('imports*') ? 'active' : '' }}">
+    
+        <a href="{{ route('imports.index') }}" class="nav-link {{ request()->routeIs('imports.*') ? 'active' : '' }}">
             <i class="bi bi-box-arrow-in-right"></i> Quản lý nhập kho
         </a>
 
-        <a href="#" class="{{ request()->is('exports*') ? 'active' : '' }}">
-            <i class="bi bi-box-arrow-right"></i> Quản lý xuất kho
+
+        <a href="{{ route('exports.index') }}" class="nav-link {{ request()->routeIs('exports.*') ? 'active' : '' }}">
+            <i class="bi bi-box-arrow-up-right"></i> Quản lý xuất kho
         </a>
 
         <div class="mt-auto mb-3 px-2">
