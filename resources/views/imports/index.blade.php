@@ -45,11 +45,7 @@
             </table>
         </div>
         
-        <div class="mt-3">
-            @if(isset($imports) && method_exists($imports, 'links'))
-                {{ $imports->links() }}
-            @endif
-        </div>
+        
     </div>
 </div>
 @endsection

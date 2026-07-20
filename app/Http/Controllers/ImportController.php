@@ -4,117 +4,108 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth; // KHAI BÁO THÊM ĐỂ LẤY NGƯỜI ĐĂNG NHẬP
 use App\Models\Import;
 use App\Models\ImportDetail;
 use App\Models\Component;
-use App\Models\Supplier; // Hãy đảm bảo bạn đã tạo Model Supplier nhé
+use App\Models\Location;
 
 class ImportController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        // Lấy danh sách phiếu nhập, sắp xếp mới nhất lên đầu, phân trang 10 dòng/trang
-        $imports = Import::orderBy('id', 'desc')->paginate(10);
-        
+        $imports = Import::orderBy('id', 'desc')->get();
         return view('imports.index', compact('imports'));
     }
 
     public function show(string $id)
     {
-        // Lấy thông tin phiếu nhập kèm theo chi tiết và tên linh kiện
-        // (Yêu cầu Model Import đã có hàm details(), Model ImportDetail đã có hàm component())
-        $import = Import::with('details.component')->findOrFail($id);
+       // Thêm 'user' và 'details.location' vào mảng with()
+        $import = Import::with(['details.component', 'user', 'details.location'])->findOrFail($id);
 
         return view('imports.show', compact('import'));
     }
-
     
     public function create()
     {
-        // Lấy danh sách linh kiện và nhà cung cấp truyền ra giao diện HTML
-        $components = Component::all();
-        $suppliers = Supplier::all(); // Xóa dòng này nếu bạn chưa cần đến Nhà cung cấp
+        $components = \App\Models\Component::all();
+        
+        // 1. Lấy toàn bộ Vị Trí từ Database (bên Quản lý Vị trí thêm mới là ở đây tự có)
+        $locations = \App\Models\Location::all(); 
+        
+        // Lấy danh sách user (như đã làm ở bước trước)
+        $users = \App\Models\User::all();
 
-        // Trả về view resources/views/imports/create.blade.php
-        return view('imports.create', compact('components', 'suppliers'));
+        // 2. Tính toán sức chứa để truyền ra ngoài giao diện
+        foreach ($locations as $loc) {
+            $usedCapacity = \App\Models\ImportDetail::where('location_id', $loc->id)->sum('quantity');
+            $loc->remaining = $loc->max_capacity - $usedCapacity;
+        }
+
+        return view('imports.create', compact('components', 'locations', 'users'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        // 1. Kiểm tra dữ liệu đầu vào (Validation)
+        // 1. Validate dữ liệu: Yêu cầu phải có mảng details
         $request->validate([
-            'component_id' => 'required',
-            'quantity' => 'required|numeric|min:1',
+            'details' => 'required|array',
+            'details.*.component_id' => 'required',
+            'details.*.location_id' => 'required',
+            'details.*.quantity' => 'required|numeric|min:1',
         ]);
 
         try {
-            // Sử dụng Transaction: Nếu có lỗi ở bất kỳ dòng code nào, database sẽ tự động hoàn tác
             DB::transaction(function () use ($request) {
                 
-                // 2. Tạo phiếu nhập chung (Lưu vào bảng imports)
+                // 2. Tạo phiếu nhập chung (Ghi nhận người nhập)
                 $import = Import::create([
-                    // Sử dụng hàm now() của Laravel để lấy ngày giờ hiện tại
                     'import_date' => now(), 
                     'note' => $request->note, 
-                    // Nếu sau này bạn dùng lại supplier_id hay ghi chú thì bỏ comment ra nhé
-                    // 'supplier_id' => $request->supplier_id, 
-                   
+                    'importer_name' => $request->importer_name, // Lấy tên người nhập từ Form
+                    'user_id' => Auth::id(), // Vẫn lưu ngầm ID của Admin thao tác để bảo mật
                 ]);
 
-                // 3. Tạo chi tiết phiếu nhập (Lưu vào bảng import_details)
-                ImportDetail::create([
-                    'import_id' => $import->id,
-                    'component_id' => $request->component_id,
-                    'quantity' => $request->quantity,
-                    'price' => $request->price ?? 0,
-                ]);
+                // 3. Lặp qua từng linh kiện gửi lên từ Form
+                foreach ($request->details as $item) {
+                    
+                    // Lấy thông tin vị trí để kiểm tra sức chứa
+                    $location = Location::findOrFail($item['location_id']);
 
-                // 4. Cập nhật số lượng (Cộng dồn vào bảng components)
-                $component = Component::findOrFail($request->component_id);
-                $component->increment('quantity', $request->quantity); 
-                // Chú ý: Nếu cột số lượng trong bảng components của bạn không phải tên 'quantity', hãy sửa lại chữ 'quantity' ở dòng trên.
+                    // Đếm xem vị trí này hiện tại đang chứa bao nhiêu đồ (Tính tổng quantity)
+                    $currentStored = ImportDetail::where('location_id', $location->id)->sum('quantity');
+
+                    // KHIỂM TRA SỨC CHỨA: Hiện có + Chuẩn bị cất > Sức chứa tối đa
+                    if (($currentStored + $item['quantity']) > $location->max_capacity) {
+                        // Bắn ra lỗi, hệ thống tự động hoàn tác toàn bộ (Rollback)
+                        throw new \Exception("Vị trí '{$location->name}' không đủ chỗ! (Đã chứa: {$currentStored}/{$location->max_capacity})");
+                    }
+
+                    // Nếu còn chỗ thì tiến hành lưu vào chi tiết
+                    ImportDetail::create([
+                        'import_id' => $import->id,
+                        'component_id' => $item['component_id'],
+                        'location_id' => $item['location_id'], // Đã có vị trí cất
+                        'quantity' => $item['quantity'],
+                        'price' => $item['price'] ?? 0,
+                    ]);
+
+                    // Cộng dồn vào kho tổng của linh kiện
+                    $component = Component::findOrFail($item['component_id']);
+                    $component->increment('quantity', $item['quantity']); 
+                }
             });
 
-            // Nếu thành công, quay lại trang trước và báo thành công
-            return back()->with('success', 'Nhập kho thành công & đã cộng dồn số lượng!');
+            // Nếu vòng lặp chạy mượt mà, chuyển hướng ra danh sách
+            return redirect()->route('imports.index')->with('success', 'Nhập hàng vào kho thành công!');
 
         } catch (\Exception $e) {
-            // Nếu lỗi, quay lại trang trước và báo lỗi chi tiết
+            // Nếu kệ đầy hoặc có lỗi, báo lỗi chi tiết ra màn hình
             return back()->with('error', 'Lỗi nhập kho: ' . $e->getMessage());
         }
     }
 
-    /**
-     * Display the specified resource.
-     */
-  
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
-    }
+    public function edit(string $id) { /* ... */ }
+    public function update(Request $request, string $id) { /* ... */ }
+    public function destroy(string $id) { /* ... */ }
 }

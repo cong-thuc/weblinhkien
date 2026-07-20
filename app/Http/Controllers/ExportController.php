@@ -5,9 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Export;
-use App\Models\ExportDetail; // <--- Cứu tinh của bạn đây!
+use App\Models\ExportDetail;
 use App\Models\Component;
-
+use App\Models\Location; 
+use App\Models\User;
 
 class ExportController extends Controller
 {
@@ -30,12 +31,44 @@ class ExportController extends Controller
         return view('exports.show', compact('export'));
     }
 
-
     public function create()
     {
         // Lấy danh sách linh kiện để chọn
         $components = Component::all();
-        return view('exports.create', compact('components'));
+        $users = User::all();
+        $locations = Location::all();
+
+        // --- PHẦN THÊM MỚI: TẠO MẢNG DỮ LIỆU ĐỂ BẮN SANG JAVASCRIPT ---
+        // Mảng chứa dữ liệu: Linh kiện A nằm ở Kệ B còn bao nhiêu cái
+        $stockDetails = []; 
+
+        foreach ($components as $comp) {
+            $stockDetails[$comp->id] = [];
+            foreach ($locations as $loc) {
+                // Đếm tổng nhập của linh kiện NÀY ở vị trí NÀY
+                $imported = \App\Models\ImportDetail::where('component_id', $comp->id)
+                            ->where('location_id', $loc->id)->sum('quantity');
+                
+                // Đếm tổng xuất của linh kiện NÀY ở vị trí NÀY
+                $exported = \App\Models\ExportDetail::where('component_id', $comp->id)
+                            ->where('location_id', $loc->id)->sum('quantity');
+                
+                $stock = $imported - $exported;
+
+                // Nếu kệ này có chứa linh kiện đang xét, thì mới nạp vào mảng
+                if ($stock > 0) {
+                    $stockDetails[$comp->id][] = [
+                        'id' => $loc->id,
+                        'name' => $loc->name,
+                        'stock' => $stock
+                    ];
+                }
+            }
+        }
+        // ---------------------------------------------------------------
+
+        // Nhớ truyền thêm stockDetails và users ra view
+        return view('exports.create', compact('components', 'stockDetails', 'users'));
     }
 
     /**
@@ -43,8 +76,10 @@ class ExportController extends Controller
      */
     public function store(Request $request)
     {
+        // Validate bắt buộc phải chọn location_id
         $request->validate([
             'component_id' => 'required',
+            'location_id'  => 'required', 
             'quantity' => 'required|numeric|min:1',
         ]);
 
@@ -53,10 +88,24 @@ class ExportController extends Controller
                 // TÌM LINH KIỆN ĐỂ KIỂM TRA TỒN KHO TRƯỚC
                 $component = Component::findOrFail($request->component_id);
 
-                // Nếu số lượng muốn xuất lớn hơn số lượng đang có -> Báo lỗi ngay!
+                // Nếu số lượng muốn xuất lớn hơn số lượng TỔNG đang có -> Báo lỗi ngay!
                 if ($request->quantity > $component->quantity) {
-                    throw new \Exception("Thất bại! Trong kho chỉ còn {$component->quantity} sản phẩm, không đủ để xuất.");
+                    throw new \Exception("Thất bại! Trong kho tổng chỉ còn {$component->quantity} sản phẩm, không đủ để xuất.");
                 }
+
+                // --- PHẦN BỔ SUNG: KIỂM TRA SỐ LƯỢNG THỰC TẾ TRÊN CÁI KỆ ĐƯỢC CHỌN ---
+                $importedAtLoc = \App\Models\ImportDetail::where('component_id', $request->component_id)
+                                        ->where('location_id', $request->location_id)->sum('quantity');
+                $exportedAtLoc = \App\Models\ExportDetail::where('component_id', $request->component_id)
+                                        ->where('location_id', $request->location_id)->sum('quantity');
+                $stockAtLoc = $importedAtLoc - $exportedAtLoc;
+
+                if ($request->quantity > $stockAtLoc) {
+                    $loc = \App\Models\Location::find($request->location_id);
+                    $locName = $loc ? $loc->name : 'Vị trí này';
+                    throw new \Exception("Thất bại! Tại '{$locName}' chỉ còn {$stockAtLoc} sản phẩm này, không đủ để xuất.");
+                }
+                // ----------------------------------------------------------------------
 
                 // A. Tạo phiếu xuất chung (Bảng exports)
                 $export = Export::create([
@@ -68,6 +117,7 @@ class ExportController extends Controller
                 ExportDetail::create([
                     'export_id' => $export->id,
                     'component_id' => $request->component_id,
+                    'location_id' => $request->location_id, // <-- LƯU THÊM VỊ TRÍ XUẤT VÀO DB
                     'quantity' => $request->quantity,
                     'price' => $request->price ?? 0, // Giá xuất
                 ]);
@@ -77,7 +127,7 @@ class ExportController extends Controller
             });
 
             // Nếu thành công thì quay về trang danh sách
-            return redirect()->route('exports.index')->with('success', 'Xuất kho thành công & đã trừ số lượng!');
+            return redirect()->route('exports.index')->with('success', 'Xuất kho thành công');
 
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
@@ -87,8 +137,7 @@ class ExportController extends Controller
     /**
      * Display the specified resource.
      */
-   
-
+    
     /**
      * Show the form for editing the specified resource.
      */

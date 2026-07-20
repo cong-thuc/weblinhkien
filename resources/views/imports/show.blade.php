@@ -15,6 +15,7 @@
         </div>
         <div class="card-body">
             <p><strong>Ngày nhập:</strong> {{ \Carbon\Carbon::parse($import->created_at)->format('d/m/Y H:i') }}</p>
+            <p><strong>Người nhập:</strong> <span class="badge bg-secondary">{{ $import->importer_name ?? $import->user->name ?? 'Quản trị viên' }}</span></p>
             <p><strong>Ghi chú:</strong> {{ $import->note ?? 'Không có' }}</p>
         </div>
     </div>
@@ -29,29 +30,39 @@
                     <tr>
                         <th>STT</th>
                         <th>Tên Linh Kiện</th>
-                        <th>Số Lượng Nhập</th>
-                        <th>Giá Nhập (VNĐ)</th>
-                        <th>Thành Tiền</th>
+                        <th>Vị trí cất</th> <!-- CỘT 3 -->
+                        <th>Số Lượng Nhập</th> <!-- CỘT 4 -->
+                        <th>Giá Nhập (VNĐ)</th> <!-- CỘT 5 -->
+                        <th>Thành Tiền</th> <!-- CỘT 6 -->
                     </tr>
                 </thead>
                 <tbody>
                     @php $total = 0; @endphp
                     @foreach($import->details as $key => $detail)
                         @php 
-                            // Nếu tên cột là price, nếu không hãy sửa lại
                             $thanhTien = $detail->quantity * ($detail->price ?? 0); 
                             $total += $thanhTien;
                         @endphp
                         <tr>
                             <td>{{ $key + 1 }}</td>
                             <td class="text-start">{{ $detail->component->name ?? 'Linh kiện không xác định' }}</td>
+                            
+                            <!-- ĐÃ THÊM Ô DỮ LIỆU VỊ TRÍ CẤT VÀO ĐÂY -->
+                            <td>
+                                <span class="badge bg-info text-dark">
+                                    {{ $detail->location->name ?? 'Chưa xếp' }}
+                                </span>
+                            </td>
+                            
                             <td><span class="badge bg-success" style="font-size: 14px;">+{{ $detail->quantity }}</span></td>
                             <td>{{ number_format($detail->price ?? 0, 0, ',', '.') }} đ</td>
                             <td>{{ number_format($thanhTien, 0, ',', '.') }} đ</td>
                         </tr>
                     @endforeach
+                    
                     <tr>
-                        <td colspan="4" class="text-end fw-bold">Tổng cộng:</td>
+                        <!-- SỬA COLSPAN THÀNH 5 ĐỂ DỒN ĐÚNG VỊ TRÍ CỘT THÀNH TIỀN -->
+                        <td colspan="5" class="text-end fw-bold">Tổng cộng:</td>
                         <td class="fw-bold text-danger">{{ number_format($total, 0, ',', '.') }} đ</td>
                     </tr>
                 </tbody>

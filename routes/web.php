@@ -8,6 +8,7 @@ use App\Http\Controllers\ComponentController;
 
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\LocationController;
 
 
 Route::get('/', function () {
@@ -74,3 +75,6 @@ Route::get('/exports', [ExportController::class, 'index'])->name('exports.index'
 Route::get('/exports/create', [ExportController::class, 'create'])->name('exports.create');
 Route::post('/exports', [ExportController::class, 'store'])->name('exports.store');
 Route::get('/exports/{id}', [ExportController::class, 'show'])->name('exports.show');
+
+
+Route::resource('locations', LocationController::class);

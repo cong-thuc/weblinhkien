@@ -85,6 +85,13 @@
             <i class="bi bi-truck"></i> Quản lý linh kiện   
         </a>
 
+
+        <li class="nav-item">
+            <a href="{{ route('locations.index') }}" class="nav-link text-white {{ request()->routeIs('locations.*') ? 'active bg-primary rounded' : '' }}">
+                <i class="bi bi-geo-alt"></i> Quản lý vị trí kho
+            </a>
+        </li>
+
     
         <a href="{{ route('imports.index') }}" class="nav-link {{ request()->routeIs('imports.*') ? 'active' : '' }}">
             <i class="bi bi-box-arrow-in-right"></i> Quản lý nhập kho

@@ -15,6 +15,7 @@ class Import extends Model
         'import_date',
         'supplier_id', 
         'user_id', 
+        'importer_name',
         'note',
         'total_amount' // Nếu bạn có cột tổng tiền
     ];
@@ -36,4 +37,6 @@ class Import extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    
 }

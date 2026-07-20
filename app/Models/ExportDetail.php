@@ -13,6 +13,7 @@ class ExportDetail extends Model
     protected $fillable = [
         'export_id',
         'component_id',
+        'location_id', 
         'quantity',
         'price',
     ];
