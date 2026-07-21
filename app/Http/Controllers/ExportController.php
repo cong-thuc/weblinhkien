@@ -38,7 +38,7 @@ class ExportController extends Controller
         $users = User::all();
         $locations = Location::all();
 
-        // --- PHẦN THÊM MỚI: TẠO MẢNG DỮ LIỆU ĐỂ BẮN SANG JAVASCRIPT ---
+        // --- PHẦN TẠO MẢNG DỮ LIỆU ĐỂ BẮN SANG JAVASCRIPT ---
         // Mảng chứa dữ liệu: Linh kiện A nằm ở Kệ B còn bao nhiêu cái
         $stockDetails = []; 
 
@@ -76,68 +76,85 @@ class ExportController extends Controller
      */
     public function store(Request $request)
     {
-        // Validate bắt buộc phải chọn location_id
+        // 1. Validate dữ liệu mảng nhiều linh kiện và người xuất
         $request->validate([
-            'component_id' => 'required',
-            'location_id'  => 'required', 
-            'quantity' => 'required|numeric|min:1',
+            'exporter_name' => 'required|string|max:255',
+            'note'          => 'nullable|string',
+            'component_id'  => 'required|array',
+            'component_id.*'=> 'required',
+            'location_id'   => 'required|array', 
+            'location_id.*' => 'required',
+            'quantity'      => 'required|array',
+            'quantity.*'    => 'required|numeric|min:1',
+            'price'         => 'nullable|array',
+        ], [
+            'exporter_name.required' => 'Vui lòng nhập tên người thực hiện.',
+            'component_id.*.required' => 'Vui lòng chọn linh kiện.',
+            'location_id.*.required' => 'Vui lòng chọn vị trí lấy hàng.',
+            'quantity.*.min' => 'Số lượng xuất phải từ 1 trở lên.',
         ]);
 
         try {
             DB::transaction(function () use ($request) {
-                // TÌM LINH KIỆN ĐỂ KIỂM TRA TỒN KHO TRƯỚC
-                $component = Component::findOrFail($request->component_id);
-
-                // Nếu số lượng muốn xuất lớn hơn số lượng TỔNG đang có -> Báo lỗi ngay!
-                if ($request->quantity > $component->quantity) {
-                    throw new \Exception("Thất bại! Trong kho tổng chỉ còn {$component->quantity} sản phẩm, không đủ để xuất.");
-                }
-
-                // --- PHẦN BỔ SUNG: KIỂM TRA SỐ LƯỢNG THỰC TẾ TRÊN CÁI KỆ ĐƯỢC CHỌN ---
-                $importedAtLoc = \App\Models\ImportDetail::where('component_id', $request->component_id)
-                                        ->where('location_id', $request->location_id)->sum('quantity');
-                $exportedAtLoc = \App\Models\ExportDetail::where('component_id', $request->component_id)
-                                        ->where('location_id', $request->location_id)->sum('quantity');
-                $stockAtLoc = $importedAtLoc - $exportedAtLoc;
-
-                if ($request->quantity > $stockAtLoc) {
-                    $loc = \App\Models\Location::find($request->location_id);
-                    $locName = $loc ? $loc->name : 'Vị trí này';
-                    throw new \Exception("Thất bại! Tại '{$locName}' chỉ còn {$stockAtLoc} sản phẩm này, không đủ để xuất.");
-                }
-                // ----------------------------------------------------------------------
-
                 // A. Tạo phiếu xuất chung (Bảng exports)
                 $export = Export::create([
+                    'exporter_name' => $request->exporter_name,
                     'note' => $request->note, 
-                    'export_date' => now(), // Bỏ comment nếu bảng exports của bạn có cột export_date
+                    'export_date' => now(), 
                 ]);
 
-                // B. Tạo chi tiết phiếu xuất (Bảng export_details)
-                ExportDetail::create([
-                    'export_id' => $export->id,
-                    'component_id' => $request->component_id,
-                    'location_id' => $request->location_id, // <-- LƯU THÊM VỊ TRÍ XUẤT VÀO DB
-                    'quantity' => $request->quantity,
-                    'price' => $request->price ?? 0, // Giá xuất
-                ]);
+                // B. Dùng vòng lặp xử lý từng linh kiện gửi lên
+                foreach ($request->component_id as $key => $compId) {
+                    
+                    $locId = $request->location_id[$key];
+                    $qtyToExport = $request->quantity[$key];
+                    $exportPrice = $request->price[$key] ?? 0;
 
-                // C. TRỪ SỐ LƯỢNG KHO (Dùng hàm decrement thay vì increment)
-                $component->decrement('quantity', $request->quantity); 
+                    // TÌM LINH KIỆN ĐỂ KIỂM TRA TỒN KHO TRƯỚC
+                    $component = Component::findOrFail($compId);
+
+                    // Nếu số lượng muốn xuất lớn hơn số lượng TỔNG đang có -> Báo lỗi
+                    if ($qtyToExport > $component->quantity) {
+                        throw new \Exception("Thất bại! Linh kiện '{$component->name}' trong kho tổng chỉ còn {$component->quantity} sản phẩm, không đủ để xuất.");
+                    }
+
+                    // --- KIỂM TRA SỐ LƯỢNG THỰC TẾ TRÊN CÁI KỆ ĐƯỢC CHỌN ---
+                    $importedAtLoc = \App\Models\ImportDetail::where('component_id', $compId)
+                                            ->where('location_id', $locId)->sum('quantity');
+                    $exportedAtLoc = \App\Models\ExportDetail::where('component_id', $compId)
+                                            ->where('location_id', $locId)->sum('quantity');
+                    $stockAtLoc = $importedAtLoc - $exportedAtLoc;
+
+                    if ($qtyToExport > $stockAtLoc) {
+                        $loc = \App\Models\Location::find($locId);
+                        $locName = $loc ? $loc->name : 'Vị trí này';
+                        throw new \Exception("Thất bại! Tại '{$locName}', linh kiện '{$component->name}' chỉ còn {$stockAtLoc} sản phẩm, không đủ để xuất.");
+                    }
+                    // ----------------------------------------------------------------------
+
+                    // C. Tạo chi tiết phiếu xuất (Bảng export_details)
+                    ExportDetail::create([
+                        'export_id' => $export->id,
+                        'component_id' => $compId,
+                        'location_id' => $locId,
+                        'quantity' => $qtyToExport,
+                        'price' => $exportPrice,
+                    ]);
+
+                    // D. TRỪ SỐ LƯỢNG KHO (Trừ đi số lượng linh kiện vừa lấy)
+                    $component->decrement('quantity', $qtyToExport); 
+                }
             });
 
             // Nếu thành công thì quay về trang danh sách
-            return redirect()->route('exports.index')->with('success', 'Xuất kho thành công');
+            return redirect()->route('exports.index')->with('success', 'Xuất kho thành công!');
 
         } catch (\Exception $e) {
-            return back()->with('error', $e->getMessage());
+            // withInput() giúp giữ lại các dữ liệu người dùng đã gõ nếu có lỗi
+            return back()->with('error', $e->getMessage())->withInput();
         }
     }
 
-    /**
-     * Display the specified resource.
-     */
-    
     /**
      * Show the form for editing the specified resource.
      */
